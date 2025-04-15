@@ -2,7 +2,7 @@
 
 ## Overview
 
-Gradio application for hosting custom [Prompt-A-Thons](https://hackworks.com/promptathon/).
+A simple Gradio application for hosting custom [Prompt-A-Thon](https://hackworks.com/promptathon/) competitions.
 
 ![](examples/demo.png)
 
