@@ -1,11 +1,15 @@
 general:
-  title: Prompt-a-thon 🧙‍♂️
+  title: Prompt-A-Thon Wizard 🦉
   description: |
     **Do you have what it takes to PWN the competition?**
     
     Join us in this thrilling prompt-a-thon where you will be challenged to create prompts that can outsmart the most advanced AI models. Your task is to design prompts that can trick the AI into generating unexpected or unwanted outputs. The goal is to see how well you can manipulate the AI's responses while adhering to ethical guidelines.
-    
-    Get ready to unleash your creativity and showcase your skills!
+  share: false
+  auth:
+    # Password generated using xkpasswd
+    # https://www.xkpasswd.net/
+    - username: wizard
+      password: $$15*Earth*Sudden*Train*92$$
 
 models:
   # OpenAI

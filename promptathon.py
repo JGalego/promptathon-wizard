@@ -3,9 +3,11 @@
 Prompt-a-thon Generator
 """
 
+# Standard import
 import os
 import yaml
 
+# Library imports
 import gradio as gr
 
 from litellm import completion
@@ -17,23 +19,32 @@ DEFAULT_DESCRIPTION = "A platform to test and improve your prompt engineering sk
 # 0. Load configuration
 with open(os.environ.get('PROMPTATHON_CONFIG') or input("Promptathon Config:"), 'r', encoding='utf-8') as config_file:
     config = yaml.full_load(config_file)
+    general = config.get('general', {})
+
+    try:
+        levels = config['levels']
+    except KeyError as exc:
+        raise ValueError("Configuration file must contain a 'levels' section.") from exc
+
+    try:
+        models = config['models']
+    except KeyError as exc:
+        raise ValueError("Configuration file must contain a 'models' section.") from exc
 
 with gr.Blocks() as demo:
     gr.Markdown(
         f"""
-# {config.get('general', {}).get('title', DEFAULT_TITLE)}
+# {general.get('title', DEFAULT_TITLE)}
 
-{config.get('general', {}).get('description', DEFAULT_DESCRIPTION)}
+{general.get('description', DEFAULT_DESCRIPTION)}
 """)
 
     # 1. Select level
-    levels = config['levels']
     levels = {level['name']: level for level in levels}
     level_names = list(levels.keys())
     level = gr.Radio(level_names, label="Level", value=level_names[0])
 
     # 2. Select model
-    models = config['models']
     models = {model['name']: model for model in models}
     model_names = list(models.keys())
     model = gr.Radio(model_names, label="Model", value=model_names[0])
@@ -44,7 +55,6 @@ with gr.Blocks() as demo:
         with gr.Column():
             prompt = gr.TextArea(label="Prompt", placeholder="Enter your prompt here...")
             generate_button = gr.Button("Generate 🪄")
-            # save_button = gr.DownloadButton("Save 💾")
             submit_button = gr.Button("Submit 🚀", interactive=False)
 
         with gr.Column():
@@ -82,5 +92,13 @@ with gr.Blocks() as demo:
     # 5. Submit response
     submit_button.click(submit_response, outputs=[response, submit_button])
 
+# Get authentication details
+auth = general.get('auth', None)
+if auth:
+    auth = list(map(lambda x: (x.get('username'), x.get('password')), auth))
+
 # Start app
-demo.queue(default_concurrency_limit=8).launch()
+demo.launch(
+    auth=auth,
+    share=general.get('share', False)
+)
