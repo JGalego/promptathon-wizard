@@ -1,6 +1,30 @@
 # pylint: disable=line-too-long,no-member,redefined-outer-name
-"""
-Prompt-a-thon Generator
+r"""
+"Pay no attention to that man behind the curtain."
+
+                                    - The Wizard of Oz
+                    ____
+                  .'* *.'
+               __/_*_*(_
+              / _______ \
+             _\_)/___\(_/_
+            / _((\- -/))_ \
+            \ \())(-)(()/ /
+             ' \(((()))/ '
+            / ' \)).))/ ' \
+           / _ \ - | - /_  \
+          (   ( .;''';. .'  )
+          _\"__ /    )\ __"/_
+            \/  \   ' /  \/
+             .'  '...' ' )
+              / /  |  \ \
+             / .   .   . \
+            /   .     .   \
+           /   /   |   \   \
+         .'   /    b    '.  '.
+     _.-'    /     Bb     '-. '-._
+ _.-'       |      BBb       '-.  '-.
+(________mrf\____.dBBBb.________)____)
 """
 
 # Standard import
