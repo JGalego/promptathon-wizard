@@ -29,10 +29,13 @@ r"""
 
 # Standard import
 import os
-import yaml
+
+from datetime import datetime
 
 # Library imports
 import gradio as gr
+import redis
+import yaml
 
 from litellm import completion
 
@@ -40,7 +43,7 @@ from litellm import completion
 DEFAULT_TITLE = "Prompt-a-thon"
 DEFAULT_DESCRIPTION = "A platform to test and improve your prompt engineering skills."
 
-# 0. Load configuration
+# 0a. Load configuration
 with open(os.environ.get('PROMPTATHON_CONFIG') or input("Promptathon Config:"), 'r', encoding='utf-8') as config_file:
     config = yaml.full_load(config_file)
     general = config.get('general', {})
@@ -54,6 +57,19 @@ with open(os.environ.get('PROMPTATHON_CONFIG') or input("Promptathon Config:"), 
         models = config['models']
     except KeyError as exc:
         raise ValueError("Configuration file must contain a 'models' section.") from exc
+
+# 0b. Connect to database
+try:
+    database = redis.Redis(
+        host=os.environ.get('REDIS_HOST', 'localhost'),
+        port=int(os.environ.get('REDIS_PORT', 6379)),
+        db=int(os.environ.get('REDIS_DB', 0)),
+        username=os.environ.get('REDIS_USERNAME', None),
+        password=os.environ.get('REDIS_PASSWORD', None),
+        decode_responses=True,
+    )
+except (KeyError, redis.ConnectionError):
+    database = None  # pylint: disable=invalid-name
 
 with gr.Blocks() as demo:
     gr.Markdown(
@@ -106,15 +122,30 @@ with gr.Blocks() as demo:
             return f"{content} ✅", gr.Button(interactive=True)
         return content, gr.Button(interactive=False)
 
-    def submit_response():
-        """Sends the prompt for evaluation."""
-        return "Response submitted! 🎉", gr.Button(interactive=False)
+    def submit_response(level, model, prompt, response, expected_completion, request: gr.Request):  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        """Registers a user submission in the database"""
+        if database is not None:
+            submission_datetime = datetime.now()
+            submission_key = f"user_submission:{request.username}:{level}:{model}:{submission_datetime.isoformat()}"
+            submission = {
+                'username': request.username,
+                'level': level,
+                'model': model,
+                'prompt': prompt,
+                'response': response,
+                'expected_completion': expected_completion,
+            }
+            database.zadd("user_submissions_index", {submission_key: submission_datetime.timestamp()})
+            database.hmset(submission_key, submission)
+            database.sadd(f"level:{level}:{model}:cleared", request.username)
+            return "Response submitted! 🎉", gr.Button(interactive=False)
+        return "Database not connected 🥀 Please check your configuration.", gr.Button(interactive=False)
 
     # 4. Generate response
     generate_button.click(generate_response, inputs=(model, level, prompt), outputs=[response, submit_button])
 
     # 5. Submit response
-    submit_button.click(submit_response, outputs=[response, submit_button])
+    submit_button.click(submit_response, inputs=[level, model, prompt, response, expected_completion], outputs=[response, submit_button])
 
 # Get authentication details
 auth = general.get('auth', None)

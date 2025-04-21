@@ -1,2 +1,3 @@
-gradio
-litellm
+gradio==5.25.2
+litellm==1.67.0
+redis==5.2.1
