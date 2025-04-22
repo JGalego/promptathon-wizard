@@ -62,14 +62,26 @@ with open(os.environ.get('PROMPTATHON_CONFIG') or input("Promptathon Config:"), 
 
 # 0b. Connect to database
 try:
-    database = redis.Redis(
-        host=os.environ.get('REDIS_HOST', 'localhost'),
-        port=int(os.environ.get('REDIS_PORT', 6379)),
-        db=int(os.environ.get('REDIS_DB', 0)),
-        username=os.environ.get('REDIS_USERNAME', None),
-        password=os.environ.get('REDIS_PASSWORD', None),
-        decode_responses=True,
-    )
+    if bool(int(os.environ.get('REDIS_CLUSTER_MODE', 0))):
+        database = redis.RedisCluster(
+            host=os.environ.get('REDIS_HOST', 'localhost'),
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            username=os.environ.get('REDIS_USERNAME', None),
+            password=os.environ.get('REDIS_PASSWORD', None),
+            ssl=bool(int(os.environ.get('REDIS_SSL', 0))),
+            decode_responses=True,
+        )
+    else:
+        database = redis.Redis(
+            host=os.environ.get('REDIS_HOST', 'localhost'),
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            db=int(os.environ.get('REDIS_DB', 0)),
+            username=os.environ.get('REDIS_USERNAME', None),
+            password=os.environ.get('REDIS_PASSWORD', None),
+            ssl=bool(int(os.environ.get('REDIS_SSL', 0))),
+            decode_responses=True,
+        )
+
 except (KeyError, redis.ConnectionError):
     database = None  # pylint: disable=invalid-name
 
@@ -140,7 +152,7 @@ with gr.Blocks() as demo:
                 'expected_completion': expected_completion,
             }
             database.zadd("user_submissions_index", {submission_key: submission_datetime.timestamp()})
-            database.hmset(submission_key, submission)
+            database.hset(submission_key, mapping=submission)
             database.sadd(f"level:{level}:{model}:cleared", request.username)
             return "Response submitted! 🎉", gr.Button(interactive=False)
         return "Database not connected 🥀 Please check your configuration.", gr.Button(interactive=False)
