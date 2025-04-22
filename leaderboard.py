@@ -162,6 +162,7 @@ def compute_user_score(user):
     total_score = 0
     for cleared in list_all_cleared():
         level, model = cleared.split(":")
+
         # Distribute level points evenly among users who cleared the level
         if is_cleared(level, model, user):
             total_cleared_level_users = count_cleared_level_users(level, model)
@@ -171,6 +172,7 @@ def compute_user_score(user):
             level_score = int(level_score)
             user_score = level_score / total_cleared_level_users
             total_score += user_score
+
         # Give bonus points for the user with the shortest submitted prompt
         submissions = get_submissions(level, model)
         submissions.sort(key=lambda x: len(x['prompt']))
@@ -178,15 +180,12 @@ def compute_user_score(user):
         if bonus_score is None:
             bonus_score = DEFAULT_BONUS_SCORE
         if submissions and submissions[0]['username'] == user:
+            print(f"User {user} got bonus points for level {level} and model {model}")
             bonus_levels.append((level, model))
             total_score += bonus_score
-    score_info = {
-        'total_score': total_score,
-        'level_score': user_score,
-        'bonus_score': bonus_score,
-        'bonus_levels': bonus_levels,
-    }
-    return score_info
+
+    cleared_levels = list_cleared_by_user(user)
+    return total_score, cleared_levels, bonus_levels
 
 
 def give_medals(leaderboard):
@@ -205,18 +204,22 @@ def get_leaderboard():
     users = list_all_users()
     leaderboard = []
     for user in users:
-        score = compute_user_score(user)
-        leaderboard.append((user, score['total_score']))
+        score, cleared, bonus = compute_user_score(user)
+        leaderboard.append((user, score, cleared, bonus))
+
+    # Sort the leaderboard by score
     leaderboard.sort(key=lambda x: x[1], reverse=True)
+
+    # Remove duplicates and format the leaderboard
     leaderboard = [{
         'rank': rank,
         'username': user,
         'score': score,
-    } for rank, (user, score) in enumerate(leaderboard, start=1)]
+        'cleared': cleared,
+        'bonus': bonus,
+    } for rank, (user, score, cleared, bonus) in enumerate(leaderboard, start=1)]
     leaderboard = give_medals(leaderboard)
     for entry in leaderboard:
-        entry['levels_cleared'] = list_cleared_by_user(entry['username'])
-        entry['bonus_levels'] = score['bonus_levels']
         if entry['prize']:
             entry['display_name'] = f"{entry['prize']} {entry['username']}"
         else:
@@ -244,11 +247,11 @@ def leaderboard_table(title_font='slant'):
             table = PrettyTable()
             table.field_names = ["Rank", "User", "Score", "Levels Cleared"]
             for entry in leaderboard:
-                entry['levels_cleared'] = "\n".join([
-                    f"{level}:{model}" for level, model in entry['levels_cleared']]
+                entry['cleared'] = "\n".join([
+                    f"{level}:{model}" for level, model in entry['cleared']]
                 )
                 table.add_row([
-                    entry['rank'], entry['display_name'], entry['score'], entry['levels_cleared']]
+                    entry['rank'], entry['display_name'], entry['score'], entry['cleared']]
                 )
             print(table)
             time.sleep(DEFAULT_REFRESH_RATE)
@@ -269,16 +272,15 @@ def leaderboard_ui():
         {'name': 'Rank', 'field': 'rank', 'label': 'Rank'},
         {'name': 'User', 'field': 'display_name', 'label': 'User'},
         {'name': 'Score', 'field': 'score', 'label': 'Score'},
-        {'name': 'Levels Cleared', 'field': 'levels_cleared', 'label': 'Levels Cleared'},
+        {'name': 'Cleared', 'field': 'cleared', 'label': 'Cleared'},
     ]
     leaderboard = get_leaderboard()
     for entry in leaderboard:
-        print(entry['bonus_levels'])
-        entry['levels_cleared'] = "\n".join(
-            [f"{'⭐' if (level, model) in entry['bonus_levels'] else ''}{level}:{model}"
-                for level, model in entry['levels_cleared']]
+        print(entry)
+        entry['cleared'] = "\n".join(
+            [f"{'⭐' if (level, model) in entry['bonus'] else ''}{level}:{model}"
+                for level, model in entry['cleared']]
         )
-    print(leaderboard)
 
     ui.table(
         columns=columns,

@@ -29,6 +29,8 @@ r"""
 
 # Standard import
 import os
+import secrets
+import string
 
 from datetime import datetime
 
@@ -72,11 +74,13 @@ except (KeyError, redis.ConnectionError):
     database = None  # pylint: disable=invalid-name
 
 with gr.Blocks() as demo:
+    promptathon_title = general.get('title', DEFAULT_TITLE)
+    promptathon_description = general.get('description', DEFAULT_DESCRIPTION)
     gr.Markdown(
         f"""
-# {general.get('title', DEFAULT_TITLE)}
+# {promptathon_title}
 
-{general.get('description', DEFAULT_DESCRIPTION)}
+{promptathon_description}
 """)
 
     # 1. Select level
@@ -147,12 +151,45 @@ with gr.Blocks() as demo:
     # 5. Submit response
     submit_button.click(submit_response, inputs=[level, model, prompt, response, expected_completion], outputs=[response, submit_button])
 
-# Get authentication details
-auth = general.get('auth', None)
-if auth:
-    auth = list(map(lambda x: (x.get('username'), x.get('password')), auth))
 
-# Start app
+def generate_password(length=12, use_special_chars=True):
+    """Generates a random password with the specified length and character set."""
+    characters = string.ascii_letters + string.digits
+    if use_special_chars:
+        characters += string.punctuation
+    password = ''.join(secrets.choice(characters) for i in range(length))
+    return password
+
+
+if gr.NO_RELOAD:
+
+    try:
+        from pyfiglet import Figlet  # pylint: disable=import-outside-toplevel
+        figlet = Figlet(font='slant')
+        print(figlet.renderText(promptathon_title))
+    except ImportError:
+        print(f"Starting {promptathon_title}...")
+
+    # Process authentication configuration data
+    auth = general.get('auth', None)
+    if isinstance(auth, list):
+        # Standardize auth format as a list of username/password dictionaries
+        auth = [{'username': user} if isinstance(user, str) else user for user in auth]
+
+        # Generate passwords for users without passwords
+        for user in auth:
+            if 'password' not in user:
+                user['password'] = generate_password()
+
+        # Display authentication details
+        print("Authentication enabled! 🔐 \n\nHere's the list of participants and their passwords:\n")
+        auth = list(map(lambda x: (x['username'], x['password']), auth))
+        for username, password in auth:
+            print(f"{username},{password}")
+
+        print("\n💾 Please save this information in a secure location.\n")
+
+# Start prompathon
 demo.launch(
     auth=auth,
     share=general.get('share', False)
