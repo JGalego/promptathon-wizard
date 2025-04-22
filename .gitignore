@@ -1,2 +1,4 @@
+.deployment
 .gradio
+.vscode
 *.rdb
