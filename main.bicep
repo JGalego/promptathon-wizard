@@ -41,6 +41,15 @@ param location string = resourceGroup().location
 var redisCacheName = 'cache${uniqueString(resourceGroup().id)}'
 var redisAccessPolicyAssignment = 'redisWebAppAssignment'
 
+// Azure OpenAI
+@secure()
+@description('Azure OpenAI API Key')
+param azureOpenAIKey string
+
+@description('Azure OpenAI API Endpoint')
+@secure()
+param azureOpenAIBase string
+
 // App Service
 var appServicePlanName = toLower('AppServicePlan-${webAppName}')
 var webSiteName = toLower('WebApp-${webAppName}')
@@ -88,10 +97,18 @@ resource appsettings 'Microsoft.Web/sites/config@2021-03-01' = {
   parent: appService
   name: 'appsettings'
   properties: {
+    // App settings
+    SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+    ENABLE_ORYX_BUILD: 'true'
+    // Redis Cache
+    REDIS_CLUSTER: '1'
     REDIS_HOST: redisEnterprise.properties.hostName
     REDIS_PORT: string(redisEnterpriseDatabase.properties.port)
-    REDIS_PASSWORD: redisEnterprise.listKeys().primaryKey
+    REDIS_PASSWORD: redisEnterpriseDatabase.listKeys().primaryKey
     REDIS_SSL: '1'
+    // Azure OpenAI
+    AZURE_API_KEY: azureOpenAIKey
+    AZURE_API_BASE: azureOpenAIBase
   }
 }
 
@@ -114,6 +131,7 @@ resource redisEnterpriseDatabase 'Microsoft.Cache/redisEnterprise/databases@2024
   parent: redisEnterprise
   properties:{
     clientProtocol: 'Encrypted'
+    accessKeysAuthentication: 'Enabled'
     port: 10000
     clusteringPolicy: 'OSSCluster'
     evictionPolicy: 'NoEviction'
@@ -140,5 +158,12 @@ resource redisAccessPolicyAssignmentName 'Microsoft.Cache/redisEnterprise/databa
  * Outputs *
  ***********/
 
+// Redis Cache
+output redisEnterpriseName string = redisEnterprise.name
+output redisEnterpriseId string = redisEnterprise.id
 output redisEnterpriseHostName string = redisEnterprise.properties.hostName
 output redisEnterprisePort int = redisEnterpriseDatabase.properties.port
+
+// App Service
+output webAppName string = appService.name
+output webAppUrl string = 'https://${appService.properties.defaultHostName}'

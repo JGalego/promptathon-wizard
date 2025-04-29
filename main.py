@@ -39,6 +39,7 @@ import gradio as gr
 import redis
 import yaml
 
+from fastapi import FastAPI
 from litellm import completion
 
 # Constants
@@ -46,7 +47,7 @@ DEFAULT_TITLE = "Prompt-a-thon"
 DEFAULT_DESCRIPTION = "A platform to test and improve your prompt engineering skills."
 
 # 0a. Load configuration
-with open(os.environ.get('PROMPTATHON_CONFIG') or input("Promptathon Config:"), 'r', encoding='utf-8') as config_file:
+with open(os.environ.get('PROMPTATHON_CONFIG', "promptathon.yml"), 'r', encoding='utf-8') as config_file:
     config = yaml.full_load(config_file)
     general = config.get('general', {})
 
@@ -201,8 +202,18 @@ if gr.NO_RELOAD:
 
         print("\n💾 Please save this information in a secure location.\n")
 
-# Start prompathon
-demo.launch(
-    auth=auth,
-    share=general.get('share', False)
-)
+
+if general.get('fastapi', os.environ.get('USE_FASTAPI', '0') == '1'):
+    # Mount Gradio app to FastAPI
+    app = FastAPI()
+    app = gr.mount_gradio_app(
+        app,
+        demo,
+        path="",
+        auth=auth
+    )
+else:
+    demo.launch(
+        auth=auth,
+        share=general.get('share', False)
+    )
