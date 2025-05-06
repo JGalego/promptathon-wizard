@@ -101,7 +101,7 @@ resource appsettings 'Microsoft.Web/sites/config@2021-03-01' = {
     SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
     ENABLE_ORYX_BUILD: 'true'
     // Redis Cache
-    REDIS_CLUSTER: '1'
+    REDIS_CLUSTER_MODE: '1'
     REDIS_HOST: redisEnterprise.properties.hostName
     REDIS_PORT: string(redisEnterpriseDatabase.properties.port)
     REDIS_PASSWORD: redisEnterpriseDatabase.listKeys().primaryKey

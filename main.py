@@ -72,6 +72,7 @@ try:
             ssl=bool(int(os.environ.get('REDIS_SSL', 0))),
             decode_responses=True,
         )
+        print("✨ Connected to Redis cluster!")
     else:
         database = redis.Redis(
             host=os.environ.get('REDIS_HOST', 'localhost'),
@@ -82,6 +83,7 @@ try:
             ssl=bool(int(os.environ.get('REDIS_SSL', 0))),
             decode_responses=True,
         )
+        print("🗃️ Connected to Redis database!")
 
 except (KeyError, redis.ConnectionError):
     database = None  # pylint: disable=invalid-name
@@ -173,9 +175,29 @@ def generate_password(length=12, use_special_chars=True):
     password = ''.join(secrets.choice(characters) for i in range(length))
     return password
 
+def register_users(auth_config):
+    """Registers users and generates passwords if not provided."""
+    # Standardize auth format
+    auth = [{'username': user} if isinstance(user, str) else user for user in auth_config]
+
+    # Generate passwords for users
+    for user in auth:
+        if 'password' not in user:
+            user['password'] = generate_password()
+
+    # Store user credentials in the database
+    if database:
+        for user in auth:
+            username = user['username']
+            password = user['password']
+            database.hset(f"user:{username}", mapping={'password': password})
+            database.sadd("users", username)
+
+    auth = list(map(lambda x: (x['username'], x['password']), auth))
+    return auth
+
 
 if gr.NO_RELOAD:
-
     try:
         from pyfiglet import Figlet  # pylint: disable=import-outside-toplevel
         figlet = Figlet(font='slant')
@@ -184,22 +206,17 @@ if gr.NO_RELOAD:
         print(f"Starting {promptathon_title}...")
 
     # Process authentication configuration data
-    auth = general.get('auth', None)
-    if isinstance(auth, list):
-        # Standardize auth format as a list of username/password dictionaries
-        auth = [{'username': user} if isinstance(user, str) else user for user in auth]
+    auth_config = general.get('auth', None)
+    if isinstance(auth_config, list):
+        auth = register_users(auth_config)
+    else:
+        auth = None  # pylint: disable=invalid-name
 
-        # Generate passwords for users without passwords
-        for user in auth:
-            if 'password' not in user:
-                user['password'] = generate_password()
-
-        # Display authentication details
+    # Display authentication details
+    if auth:
         print("Authentication enabled! 🔐 \n\nHere's the list of participants and their passwords:\n")
-        auth = list(map(lambda x: (x['username'], x['password']), auth))
         for username, password in auth:
             print(f"{username},{password}")
-
         print("\n💾 Please save this information in a secure location.\n")
 
 
@@ -213,6 +230,7 @@ if general.get('fastapi', os.environ.get('USE_FASTAPI', '0') == '1'):
         auth=auth
     )
 else:
+    # or just do a regular launch
     demo.launch(
         auth=auth,
         share=general.get('share', False)
