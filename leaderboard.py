@@ -19,27 +19,29 @@ DEFAULT_LEVEL_SCORE = 100
 DEFAULT_BONUS_SCORE = 10
 
 try:
-    database = redis.Redis(
-        host=os.environ.get('REDIS_HOST', "localhost"),
-        port=int(os.environ.get('REDIS_PORT', 6379)),
-        db=int(os.environ.get('REDIS_DB', 0)),
-        username=os.environ.get('REDIS_USERNAME', None),
-        password=os.environ.get('REDIS_PASSWORD', None),
-        decode_responses=True,
-    )
+    if bool(int(os.environ.get('REDIS_CLUSTER_MODE', 0))):
+        database = redis.RedisCluster(
+            host=os.environ.get('REDIS_HOST', 'localhost'),
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            username=os.environ.get('REDIS_USERNAME', None),
+            password=os.environ.get('REDIS_PASSWORD', None),
+            ssl=bool(int(os.environ.get('REDIS_SSL', 0))),
+            decode_responses=True,
+        )
+        print("✨ Connected to Redis cluster!")
+    else:
+        database = redis.Redis(
+            host=os.environ.get('REDIS_HOST', 'localhost'),
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            db=int(os.environ.get('REDIS_DB', 0)),
+            username=os.environ.get('REDIS_USERNAME', None),
+            password=os.environ.get('REDIS_PASSWORD', None),
+            ssl=bool(int(os.environ.get('REDIS_SSL', 0))),
+            decode_responses=True,
+        )
+        print("🗃️ Connected to Redis database!")
 except (KeyError, redis.ConnectionError) as exc:
     raise exc
-
-
-def search_by_user(user):
-    """Returns all user submissions"""
-    cursor = '0'
-    submissions = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match=f"user_submission:{user}:*")
-        for key in keys:
-            submissions.append(database.hgetall(key))
-    return submissions
 
 
 def search_by_timestamp(start, end):
@@ -51,84 +53,57 @@ def search_by_timestamp(start, end):
 
 def list_all_cleared():
     """Returns a list all cleared level/model combinations"""
-    cursor = '0'
     all_cleared = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match="level:*:cleared")
-        for key in keys:
-            all_cleared.append(":".join(key.split(":")[1:-1]))
+    for level in database.scan_iter("level:*:cleared"):
+        all_cleared.append(":".join(level.split(":")[1:-1]))
     return all_cleared
 
 
 def list_all_users():
-    """Returns a list of all users"""
-    cursor = '0'
+    """Returns a list of users who have made submissions"""
     users = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match="user_submission:*")
-        for key in keys:
-            user = key.split(":")[1]
-            if user not in users:
-                users.append(user)
+    for submission in database.scan_iter("user_submission:*"):
+        user = submission.split(":")[1]
+        if user not in users:
+            users.append(user)
     return users
 
 
 def list_all_user_submissions():
-    """Returns a list of all user submissions"""
-    cursor = '0'
-    submissions = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match="user_submission:*")
-        for key in keys:
-            submission = database.hgetall(key)
-            if submission not in submissions:
-                submissions.append(submission)
-    return submissions
+    """Returns all submissions"""
+    return [
+        database.hgetall(submission)
+            for submission in database.scan_iter("user_submission:*")
+    ]
 
 
 def get_user_submission(user, submission_datetime):
-    """Returns a user submission"""
-    submission_key = f"user_submission:{user}:{submission_datetime.isoformat()}"
-    return database.hgetall(submission_key)
+    """Returns a user submission by datetime"""
+    return database.hgetall(f"user_submission:{user}:{submission_datetime.isoformat()}")
 
 
 def get_user_submissions(user):
     """Returns all user submissions"""
-    cursor = '0'
-    submissions = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match=f"user_submission:{user}:*")
-        for key in keys:
-            submission = database.hgetall(key)
-            if submission not in submissions:
-                submissions.append(submission)
-    return submissions
+    return [
+        database.hgetall(submission)
+            for submission in database.scan_iter(f"user_submission:{user}:*")
+    ]
 
 
 def get_user_submissions_by_level(user, level):
     """Returns user submissions for a level"""
-    cursor = '0'
-    submissions = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match=f"user_submission:{user}:{level}:*")
-        for key in keys:
-            submission = database.hgetall(key)
-            if submission not in submissions:
-                submissions.append(submission)
-    return submissions
+    return [
+        database.hgetall(submission)
+            for submission in database.scan_iter(f"user_submission:{user}:{level}:*")
+    ]
 
 
 def get_submissions(level, model):
-    """Returns all user submissions for a level/model combination"""
-    cursor = '0'
-    submissions = []
-    while cursor != 0:
-        cursor, keys = database.scan(cursor, match=f"user_submission:*:{level}:{model}:*")
-        for key in keys:
-            submission = database.hgetall(key)
-            if submission not in submissions:
-                submissions.append(submission)
-    return submissions
+    """Returns all user submissions for a given """
+    return [
+        database.hgetall(submission)
+            for submission in database.scan_iter(f"user_submission:*:{level}:{model}:*")
+    ]
 
 
 def is_cleared(level, model, user):
@@ -170,7 +145,7 @@ def compute_user_score(user):
             if level_score is None:
                 level_score = DEFAULT_LEVEL_SCORE
             level_score = int(level_score)
-            user_score = level_score / total_cleared_level_users
+            user_score = level_score // total_cleared_level_users
             total_score += user_score
 
         # Give bonus points for the user with the shortest submitted prompt
@@ -180,7 +155,6 @@ def compute_user_score(user):
         if bonus_score is None:
             bonus_score = DEFAULT_BONUS_SCORE
         if submissions and submissions[0]['username'] == user:
-            print(f"User {user} got bonus points for level {level} and model {model}")
             bonus_levels.append((level, model))
             total_score += bonus_score
 
@@ -276,7 +250,6 @@ def leaderboard_ui():
     ]
     leaderboard = get_leaderboard()
     for entry in leaderboard:
-        print(entry)
         entry['cleared'] = "\n".join(
             [f"{'⭐' if (level, model) in entry['bonus'] else ''}{level}:{model}"
                 for level, model in entry['cleared']]
