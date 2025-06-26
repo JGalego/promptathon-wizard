@@ -197,6 +197,15 @@ def register_users(auth_config):
     return auth
 
 
+def authenticate(username: str, password: str):
+    """Authenticates a user against the database."""
+    if database is None:
+        return False
+    stored_password = database.hget(f"user:{username}", 'password')
+    if stored_password is None:
+        return False
+    return stored_password == password
+
 if gr.NO_RELOAD:
     try:
         from pyfiglet import Figlet  # pylint: disable=import-outside-toplevel
@@ -210,10 +219,10 @@ if gr.NO_RELOAD:
     if isinstance(auth_config, list):
         auth = register_users(auth_config)
     else:
-        auth = None  # pylint: disable=invalid-name
+        auth = authenticate
 
     # Display authentication details
-    if auth:
+    if auth and isinstance(auth, list):
         print("Authentication enabled! 🔐 \n\nHere's the list of participants and their passwords:\n")
         for username, password in auth:
             print(f"{username},{password}")

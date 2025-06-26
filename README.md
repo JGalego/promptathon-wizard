@@ -56,4 +56,4 @@ Before you go live, make sure you perform the following actions on your configur
     az deployment group create --resource-group ai-promptathon --template-file main.bicep
     ```
 
-2. [Deploy Gradio app on Azure with Azure App Service](https://techcommunity.microsoft.com/blog/azure-ai-services-blog/deploy-a-gradio-web-app-on-azure-with-azure-app-service-a-step-by-step-guide)
+2. [Deploy Gradio app on Azure with Azure App Service](https://techcommunity.microsoft.com/blog/azure-ai-services-blog/deploy-a-gradio-web-app-on-azure-with-azure-app-service-a-step-by-step-guide/4121127)
