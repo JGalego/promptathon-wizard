@@ -19,6 +19,7 @@ from prettytable import PrettyTable
 DEFAULT_LEADERBOARD_TITLE = "Leaderboard"
 DEFAULT_REFRESH_RATE = 60
 DEFAULT_LEVEL_SCORE = 100
+DEFAULT_BONUS_SCORE = 10
 
 # Configure logging
 logging.basicConfig(
@@ -263,9 +264,10 @@ def list_cleared_users(level, model):
     return database.smembers(f"level:{level}:{model}:cleared")
 
 
-def compute_user_score(user):
+def compute_user_score(user, shortest_submissions_by_level, bonus_scores_by_level):
     """Compute the score of a user"""
     logging.debug("Computing score for user %s", user)
+    bonus_levels = []
     total_score = 0
     for cleared in list_all_cleared_cached():
         level, model = cleared.split(":")
@@ -277,8 +279,16 @@ def compute_user_score(user):
             user_score = level_score // total_cleared_level_users
             total_score += user_score
 
+        # Give bonus points for the user with the shortest submitted prompt
+        level_model_key = f"{level}:{model}"
+        shortest_submission = shortest_submissions_by_level.get(level_model_key)
+        bonus_score = bonus_scores_by_level.get(level)
+        if shortest_submission and shortest_submission.get('username') == user and bonus_score:
+            bonus_levels.append((level, model))
+            total_score += bonus_score
+
     cleared_levels = list_cleared_by_user(user)
-    return total_score, cleared_levels
+    return total_score, cleared_levels, bonus_levels
 
 
 def give_medals(leaderboard):
@@ -297,10 +307,27 @@ def get_leaderboard():
     """Get the leaderboard"""
     logging.debug("Creating leaderboard")
     users = list_all_users()
+    
+    # Pre-compute shortest submissions and bonus scores for all cleared levels
+    cleared_levels = list_all_cleared_cached()
+    shortest_submissions_by_level = {}
+    bonus_scores_by_level = {}
+    
+    for cleared in cleared_levels:
+        level, model = cleared.split(":")
+        level_model_key = f"{level}:{model}"
+        
+        # Get shortest submission for this level/model combination
+        shortest_submissions_by_level[level_model_key] = get_shortest_submission(level, model)
+        
+        # Get bonus score for this level (only compute once per level)
+        if level not in bonus_scores_by_level:
+            bonus_scores_by_level[level] = get_bonus_score_cached(level)
+    
     leaderboard = []
     for user in users:
-        score, cleared = compute_user_score(user)
-        leaderboard.append((user, score, cleared))
+        score, cleared, bonus = compute_user_score(user, shortest_submissions_by_level, bonus_scores_by_level)
+        leaderboard.append((user, score, cleared, bonus))
 
     # Sort the leaderboard by score
     leaderboard.sort(key=lambda x: x[1], reverse=True)
@@ -311,7 +338,8 @@ def get_leaderboard():
         'username': user,
         'score': score,
         'cleared': cleared,
-    } for rank, (user, score, cleared) in enumerate(leaderboard, start=1)]
+        'bonus': bonus,
+    } for rank, (user, score, cleared, bonus) in enumerate(leaderboard, start=1)]
 
     # Add prizes and display names
     leaderboard = give_medals(leaderboard)
@@ -375,7 +403,7 @@ def leaderboard_ui():
     leaderboard = get_leaderboard()
     for entry in leaderboard:
         entry['cleared'] = "\n".join(
-            ["{}:{}".format(level, model)  # pylint: disable=consider-using-f-string
+            ["{}{}:{}".format('⭐' if (level, model) in entry.get('bonus', []) else '', level, model)  # pylint: disable=consider-using-f-string
                 for level, model in entry['cleared']]
         )
 
@@ -412,6 +440,73 @@ def leaderboard_ui():
     )
 
 
+# Cache for shortest submissions (expires after 30 seconds)
+_SHORTEST_SUBMISSION_CACHE = {}
+
+def get_shortest_submission(level, model):
+    """Returns the submission with the shortest prompt for a given level and model"""
+    logging.debug("Getting shortest submission for level %s and model %s", level, model)
+
+    # Check cache first
+    cache_key = f"shortest:{level}:{model}"
+    current_time = time.time()
+    
+    if cache_key in _SHORTEST_SUBMISSION_CACHE:
+        data, timestamp = _SHORTEST_SUBMISSION_CACHE[cache_key]
+        if current_time - timestamp < _CACHE_EXPIRY:
+            return data
+
+    try:
+        # Get all matching keys
+        keys = list(database.scan_iter(f"user_submission:*:{level}:{model}:*"))
+
+        if not keys:
+            # Cache the None result to avoid repeated database scans
+            _SHORTEST_SUBMISSION_CACHE[cache_key] = (None, current_time)
+            return None
+
+        # First pass: only get prompt lengths to find the shortest
+        pipeline = database.pipeline()
+        for key in keys:
+            pipeline.hget(key, 'prompt')
+
+        prompt_results = pipeline.execute()
+
+        # Find the index of the shortest prompt
+        shortest_length = float('inf')
+        shortest_index = None
+
+        for i, prompt in enumerate(prompt_results):
+            if prompt:  # Check if prompt exists
+                prompt_length = len(prompt)
+                if prompt_length < shortest_length:
+                    shortest_length = prompt_length
+                    shortest_index = i
+
+        if shortest_index is not None:
+            # Second pass: only get the username for the shortest submission
+            shortest_key = keys[shortest_index]
+            shortest_user = database.hget(shortest_key, 'username')
+            
+            if shortest_user:
+                result = {
+                    'username': shortest_user,
+                    'prompt_length': shortest_length,
+                    'key': shortest_key
+                }
+                # Cache the result
+                _SHORTEST_SUBMISSION_CACHE[cache_key] = (result, current_time)
+                return result
+
+        # Cache the None result
+        _SHORTEST_SUBMISSION_CACHE[cache_key] = (None, current_time)
+        return None
+
+    except (redis.exceptions.RedisError, ValueError) as e:
+        logging.error("Error getting shortest submission for %s:%s: %s", level, model, e)
+        return None
+
+
 def get_submissions(level, model):
     """Returns all user submissions for a given level and model with optimized performance"""
     return _get_cached_submissions(level, model)
@@ -420,7 +515,8 @@ def get_submissions(level, model):
 def clear_submissions_cache():
     """Clear the submissions cache - call this when new submissions are added"""
     _SUBMISSIONS_CACHE.clear()
-    logging.debug("Submissions cache cleared")
+    _SHORTEST_SUBMISSION_CACHE.clear()
+    logging.debug("Submissions and shortest submission caches cleared")
 
 
 def clear_all_caches():
@@ -436,7 +532,9 @@ def get_submissions_cache_stats():
     return {
         'cache_size': len(_SUBMISSIONS_CACHE),
         'cache_keys': list(_SUBMISSIONS_CACHE.keys()),
-        'cache_expiry_seconds': _CACHE_EXPIRY
+        'cache_expiry_seconds': _CACHE_EXPIRY,
+        'shortest_submission_cache_size': len(_SHORTEST_SUBMISSION_CACHE),
+        'shortest_submission_cache_keys': list(_SHORTEST_SUBMISSION_CACHE.keys())
     }
 
 
@@ -448,6 +546,7 @@ def get_all_cache_stats():
         'cleared_levels_count': len(_CLEARED_LEVELS_CACHE) if _CLEARED_LEVELS_CACHE else 0,
         'score_cache_info': {
             'level_score_cache': get_level_score_cached.cache_info(),
+            'bonus_score_cache': get_bonus_score_cached.cache_info()
         }
     }
 
@@ -460,9 +559,17 @@ def get_level_score_cached(level):
     return int(level_score) if level_score is not None else DEFAULT_LEVEL_SCORE
 
 
+@lru_cache(maxsize=128)
+def get_bonus_score_cached(level):
+    """Get bonus score with caching"""
+    bonus_score = database.hget(f"level:{level}:score", "bonus")
+    return int(bonus_score) if bonus_score is not None else DEFAULT_BONUS_SCORE
+
+
 def clear_score_cache():
     """Clear the score cache - call this when scores are updated"""
     get_level_score_cached.cache_clear()
+    get_bonus_score_cached.cache_clear()
     logging.debug("Score cache cleared")
 
 
