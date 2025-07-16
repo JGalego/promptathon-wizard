@@ -1,2 +1,4 @@
+dotenv==0.9.9
 nicegui==2.15.0
 prettytable==3.16.0
+pywebview==5.4

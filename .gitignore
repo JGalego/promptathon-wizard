@@ -1,6 +1,8 @@
 __pycache__
 .deployment
+.env
 .gradio
 .vscode
 *.rdb
+*.csv
 deploy

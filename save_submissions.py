@@ -6,6 +6,11 @@ import os
 import redis
 import pandas as pd
 
+from dotenv import load_dotenv
+
+# Load environment variables from file
+load_dotenv()
+
 try:
     if bool(int(os.environ.get('REDIS_CLUSTER_MODE', 0))):
         database = redis.RedisCluster(
@@ -40,9 +45,10 @@ def get_submissions():
     for submission in database.scan_iter('user_submission:*'):
         submission_data = database.hgetall(submission)
         submission_data = {
+            'username': submission_data.get('username'),
             'level': submission_data.get('level'),
             'model': submission_data.get('model'),
-            'prompt': submission_data.get('prompt')
+            'prompt': submission_data.get('prompt'),
         }
         submissions.append(submission_data)
 
@@ -54,7 +60,7 @@ def get_submissions():
         return
 
     # Save to CSV
-    df.to_csv('submissions.csv', index_label='id')
+    df.to_csv("submissions.csv", index_label='id')
     print("💾 Submissions saved to submissions.csv")
 
 if __name__ == "__main__":
